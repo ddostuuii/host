@@ -2,8 +2,8 @@ from telegram import Update, InlineKeyboardMarkup, InlineKeyboardButton
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, CallbackQueryHandler, ContextTypes
 
 TOKEN = "7204456254:AAG_E_SfVryRcmYcgbRIqk5zE56RPYU1OTU"
-CHANNEL_USERNAME = "@seedhe_maut"  # अपने चैनल का यूजरनेम डालें (जैसे @seedhe_maut)
-CHANNEL_ID = None  # चैनल ID ऑटोमैटिकली निकाली जाएगी
+CHANNEL_USERNAME = "seedhe_maut"  # अपने चैनल का यूजरनेम डालें (जैसे @seedhe_maut)
+CHANNEL_ID = -1002363906868  # चैनल ID ऑटोमैटिकली निकाली जाएगी
 
 # चैनल की ID निकालने का फंक्शन
 async def get_channel_id(update: Update, context: ContextTypes.DEFAULT_TYPE):
