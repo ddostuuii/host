@@ -3,15 +3,14 @@ import subprocess
 from telegram import Update, InlineKeyboardMarkup, InlineKeyboardButton
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, CallbackQueryHandler, ContextTypes
 
-TOKEN = "8021272491:AAEfIJ0UK1esSQZeRsrVhKm4zImxmpyZD68"
-CHANNEL_USERNAME = "seedhe_maut"  # अपने चैनल का यूजरनेम
+TOKEN = "7204456254:AAG_E_SfVryRcmYcgbRIqk5zE56RPYU1OTU"
+CHANNEL_USERNAME = "seedhe_maut"  # चैनल का यूजरनेम (बिना @ के)
 CHANNEL_ID = -1002363906868  # चैनल की Numeric ID
 
 # ✅ चैनल जॉइन चेक करने का फंक्शन
-async def is_user_joined(update: Update) -> bool:
-    user_id = update.message.from_user.id
+async def is_user_joined(user_id: int, context: ContextTypes.DEFAULT_TYPE) -> bool:
     try:
-        chat_member = await update.message.bot.get_chat_member(CHANNEL_ID, user_id)
+        chat_member = await context.bot.get_chat_member(CHANNEL_ID, user_id)
         return chat_member.status in ["member", "administrator", "creator"]
     except:
         return False
@@ -28,30 +27,32 @@ async def send_join_message(update: Update) -> None:
         reply_markup=reply_markup
     )
 
-# ✅ स्टार्ट कमांड
+# ✅ /start कमांड
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    if not await is_user_joined(update):
+    user_id = update.message.from_user.id
+
+    if not await is_user_joined(user_id, context):
         await send_join_message(update)
         return
+
     await update.message.reply_text("🎉 बॉट में आपका स्वागत है! अब आप कमांड का उपयोग कर सकते हैं।")
 
 # ✅ "✅ मैंने जॉइन कर लिया" बटन का हैंडलर
 async def check_join(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     query = update.callback_query
     user_id = query.from_user.id
-    try:
-        chat_member = await context.bot.get_chat_member(CHANNEL_ID, user_id)
-        if chat_member.status in ["member", "administrator", "creator"]:
-            await query.answer("✅ आपने चैनल जॉइन कर लिया है!", show_alert=True)
-            await query.message.edit_text("🎉 बॉट में आपका स्वागत है! अब आप कमांड का उपयोग कर सकते हैं।")
-        else:
-            await query.answer("🚫 पहले चैनल जॉइन करें!", show_alert=True)
-    except:
+
+    if await is_user_joined(user_id, context):
+        await query.answer("✅ आपने चैनल जॉइन कर लिया है!", show_alert=True)
+        await query.message.edit_text("🎉 बॉट में आपका स्वागत है! अब आप कमांड का उपयोग कर सकते हैं।")
+    else:
         await query.answer("🚫 पहले चैनल जॉइन करें!", show_alert=True)
 
 # ✅ /host कमांड (अब सही मैसेज भेजेगा)
 async def host(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    if not await is_user_joined(update):
+    user_id = update.message.from_user.id
+
+    if not await is_user_joined(user_id, context):
         await send_join_message(update)
         return
 
@@ -59,7 +60,9 @@ async def host(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 
 # ✅ Python फ़ाइल होस्ट करने का फंक्शन
 async def handle_file(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    if not await is_user_joined(update):
+    user_id = update.message.from_user.id
+
+    if not await is_user_joined(user_id, context):
         await send_join_message(update)
         return
 
