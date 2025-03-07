@@ -3,7 +3,7 @@ import subprocess
 from telegram import Update, InlineKeyboardMarkup, InlineKeyboardButton
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, CallbackQueryHandler, ContextTypes
 
-TOKEN = "7204456254:AAG_E_SfVryRcmYcgbRIqk5zE56RPYU1OTU"
+TOKEN = "8021272491:AAEfIJ0UK1esSQZeRsrVhKm4zImxmpyZD68"
 CHANNEL_USERNAME = "seedhe_maut"  # अपने चैनल का यूजरनेम
 CHANNEL_ID = -1002363906868  # चैनल की Numeric ID
 
