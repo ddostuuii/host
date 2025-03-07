@@ -83,6 +83,20 @@ async def handle_file(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
     except Exception as e:
         await update.message.reply_text(f"❌ **Error:** `{str(e)}`", parse_mode="Markdown")
 
+# ✅ "✅ मैंने जॉइन कर लिया" बटन का हैंडलर
+async def check_join(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    query = update.callback_query
+    user_id = query.from_user.id
+    try:
+        chat_member = await context.bot.get_chat_member(CHANNEL_ID, user_id)
+        if chat_member.status in ["member", "administrator", "creator"]:
+            await query.answer("✅ आपने चैनल जॉइन कर लिया है!", show_alert=True)
+            await query.message.edit_text("🎉 बॉट में आपका स्वागत है! अब आप कमांड का उपयोग कर सकते हैं।")
+        else:
+            await query.answer("🚫 पहले चैनल जॉइन करें!", show_alert=True)
+    except:
+        await query.answer("🚫 पहले चैनल जॉइन करें!", show_alert=True)
+
 # ✅ बॉट स्टार्ट फंक्शन
 def main():
     app = Application.builder().token(TOKEN).build()
