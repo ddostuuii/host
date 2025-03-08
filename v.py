@@ -6,6 +6,7 @@ from telegram.ext import Application, CommandHandler, MessageHandler, filters, C
 TOKEN = "8024990900:AAEVjj9q-b3SIEakZPfGOnq03rSNwQWniDU"
 CHANNEL_USERNAME = "seedhe_maut"
 CHANNEL_ID = -1002363906868  
+active_users = set()  # सिर्फ उन्हीं यूज़र्स को फाइल होस्ट करने देना है जो /host भेजें
 
 # ✅ चैनल जॉइन चेक करने का फंक्शन
 async def is_user_joined(user_id: int, context: ContextTypes.DEFAULT_TYPE) -> bool:
@@ -35,7 +36,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         await send_join_message(update)
         return
 
-    await update.message.reply_text("🎉 बॉट में आपका स्वागत है! अब आप कमांड का उपयोग कर सकते हैं।")
+    await update.message.reply_text("🎉 बॉट में आपका स्वागत है! `/host` कमांड भेजें और फिर `.py` फाइल अपलोड करें।")
 
 # ✅ /host Command
 async def host(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -45,7 +46,8 @@ async def host(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         await send_join_message(update)
         return
 
-    await update.message.reply_text("📂 **Put your Python file (.py) here.**", parse_mode="Markdown")
+    active_users.add(user_id)  # /host करने वाले यूजर को एक्टिव लिस्ट में ऐड करो
+    await update.message.reply_text("📂 **अब आप `.py` फाइल भेज सकते हैं, बॉट उसे होस्ट करेगा।**", parse_mode="Markdown")
 
 # ✅ Python फ़ाइल होस्ट करने का फंक्शन
 async def handle_file(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -53,6 +55,10 @@ async def handle_file(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
 
     if not await is_user_joined(user_id, context):
         await send_join_message(update)
+        return
+
+    if user_id not in active_users:
+        await update.message.reply_text("⚠️ **Please use /host first!**", parse_mode="Markdown")
         return
 
     file = update.message.document
@@ -97,7 +103,7 @@ async def check_join(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
         chat_member = await context.bot.get_chat_member(CHANNEL_ID, user_id)
         if chat_member.status in ["member", "administrator", "creator"]:
             await query.answer("✅ आपने चैनल जॉइन कर लिया है!", show_alert=True)
-            await query.message.edit_text("🎉 बॉट में आपका स्वागत है! अब आप कमांड का उपयोग कर सकते हैं।")
+            await query.message.edit_text("🎉 बॉट में आपका स्वागत है! `/host` कमांड भेजें और फिर `.py` फाइल अपलोड करें।")
         else:
             await query.answer("🚫 पहले चैनल जॉइन करें!", show_alert=True)
     except:
