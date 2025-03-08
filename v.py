@@ -7,6 +7,7 @@ from telegram.ext import Application, CommandHandler, MessageHandler, filters, C
 TOKEN = "8024990900:AAEVjj9q-b3SIEakZPfGOnq03rSNwQWniDU"
 CHANNEL_USERNAME = "seedhe_maut"
 CHANNEL_ID = -1002363906868
+admins = {7017469802, 987654321}  # यहाँ अपने एडमिन्स के टेलीग्राम यूज़र ID डालें
 
 admins = set()  
 approved_users = set()  
