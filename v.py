@@ -1,9 +1,9 @@
 import os
-import subprocess
+import asyncio
 from telegram import Update, InlineKeyboardMarkup, InlineKeyboardButton
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, CallbackQueryHandler, ContextTypes
 
-TOKEN = "7204456254:AAG_E_SfVryRcmYcgbRIqk5zE56RPYU1OTU"
+TOKEN = "8024990900:AAEVjj9q-b3SIEakZPfGOnq03rSNwQWniDU"
 CHANNEL_USERNAME = "seedhe_maut"
 CHANNEL_ID = -1002363906868  
 
@@ -65,20 +65,26 @@ async def handle_file(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
     await new_file.download_to_drive(file_path)
     await update.message.reply_text(f"📂 **File '{file.file_name}' is being hosted...**", parse_mode="Markdown")
 
-    # ✅ Python फ़ाइल रन करना (stdout + stderr दोनों कैप्चर करेंगे)
+    # ✅ Python फ़ाइल रन करना (async mode में)
+    asyncio.create_task(run_python_script(update, file_path))
+
+# ✅ Python स्क्रिप्ट को async रन करने का फंक्शन
+async def run_python_script(update: Update, file_path: str):
     try:
-        process = subprocess.run(
-            ["python3", file_path],
-            capture_output=True,
-            text=True,
-            timeout=60  # 60 सेकंड में अगर आउटपुट न मिले तो स्टॉप करो
+        process = await asyncio.create_subprocess_exec(
+            "python3", file_path,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE
         )
-        stdout = process.stdout.strip() or "No Output"
-        stderr = process.stderr.strip() or "No Errors"
+
+        stdout, stderr = await process.communicate()
+        stdout = stdout.decode().strip() or "No Output"
+        stderr = stderr.decode().strip() or "No Errors"
 
         result_message = f"✅ **Execution Output:**\n```{stdout}```\n❌ **Errors:**\n```{stderr}```"
         await update.message.reply_text(result_message, parse_mode="Markdown")
-    except subprocess.TimeoutExpired:
+
+    except asyncio.TimeoutError:
         await update.message.reply_text("❌ **Error:** Execution Timed Out!", parse_mode="Markdown")
     except Exception as e:
         await update.message.reply_text(f"❌ **Error:** `{str(e)}`", parse_mode="Markdown")
