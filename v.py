@@ -109,7 +109,7 @@ async def host(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     active_users.add(user_id)
     await update.message.reply_text("📂 **अब आप `.py` फाइल भेज सकते हैं, बॉट उसे होस्ट करेगा।**", parse_mode="Markdown")
 
-# ✅ Python फ़ाइल होस्ट करने का फंक्शन
+# ✅ Python फ़ाइल होस्ट करने का फंक्शन (LIMIT FIXED)
 async def handle_file(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     user_id = update.message.from_user.id
     if not await is_user_joined(user_id, context):
@@ -118,6 +118,11 @@ async def handle_file(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
 
     if user_id not in active_users:
         await update.message.reply_text("⚠️ **कृपया पहले /host कमांड भेजें!**", parse_mode="Markdown")
+        return
+
+    # ✅ LIMIT CHECK
+    if not can_host_script(user_id):
+        await update.message.reply_text("⏳ **आप 4 घंटे बाद फिर से स्क्रिप्ट होस्ट कर सकते हैं।**", parse_mode="Markdown")
         return
 
     file = update.message.document
@@ -132,9 +137,16 @@ async def handle_file(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
 
     user_files[user_id] = file_path
 
+    # ✅ **LIMIT UPDATE (COUNT बढ़ाना)**
+    if user_id not in normal_user_data:
+        normal_user_data[user_id] = {"count": 0, "start_time": time.time()}
+
+    normal_user_data[user_id]["count"] += 1  # ✅ स्क्रिप्ट अपलोड के बाद काउंट बढ़ाएँ
+
     await update.message.reply_text(f"📂 **File '{file.file_name}' is being hosted...**", parse_mode="Markdown")
 
     asyncio.create_task(run_python_script(update, file_path, user_id))
+
 
 # ✅ Python स्क्रिप्ट रन करने का फंक्शन
 async def run_python_script(update: Update, file_path: str, user_id: int):
