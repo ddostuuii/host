@@ -5,9 +5,9 @@ from dotenv import load_dotenv
 from telegram import Update
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
 
-# ✅ बॉट टोकन और एडमिन डिटेल्स लोड करना
+# ✅ बॉट टोकन और चैनल डिटेल्स लोड करना
 load_dotenv()
-TOKEN = os.getenv("BOT_TOKEN")  # .env से टोकन लोड करें
+TOKEN = os.getenv("BOT_TOKEN")
 CHANNEL_ID = int(os.getenv("CHANNEL_ID", "-1002363906868"))
 ADMIN = int(os.getenv("ADMIN_ID", "7017469802"))
 
@@ -22,14 +22,30 @@ def load_users(filename):
     return set()
 
 admins = load_users(admins_file)
-admins.add(ADMIN)  # मुख्य एडमिन को लिस्ट में रखना जरूरी
+admins.add(ADMIN)
 approved_users = load_users(approved_users_file)
 
-# ✅ यूज़र डेटा (लिमिट ट्रैकिंग)
-normal_user_data = {}
-active_users = set()
-user_files = {}
-running_processes = {}
+# ✅ Normal Users की लिमिट ट्रैकिंग
+user_limits = {}
+
+def can_host_script(user_id: int) -> bool:
+    """Check if the user can host a script based on limits."""
+    if user_id in admins or user_id in approved_users:
+        return True  
+
+    now = time.time()
+    user_data = user_limits.get(user_id, {"count": 0, "start_time": now})
+
+    if now - user_data["start_time"] >= 24 * 3600:
+        user_data["count"] = 0
+        user_data["start_time"] = now
+
+    if user_data["count"] >= 2:
+        return False
+
+    user_data["count"] += 1
+    user_limits[user_id] = user_data
+    return True
 
 # ✅ एडमिन सेव करने का फंक्शन
 def save_users(filename, user_set):
@@ -81,7 +97,10 @@ async def host(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         await update.message.reply_text("🚫 पहले चैनल जॉइन करें!")
         return
 
-    active_users.add(user_id)
+    if not can_host_script(user_id):
+        await update.message.reply_text("⏳ **आप 4 घंटे बाद फिर से स्क्रिप्ट होस्ट कर सकते हैं।**", parse_mode="Markdown")
+        return
+
     await update.message.reply_text("📂 **अब आप `.py` फाइल भेज सकते हैं, बॉट उसे होस्ट करेगा।**", parse_mode="Markdown")
 
 # ✅ Python फ़ाइल होस्ट करने का फंक्शन
@@ -91,7 +110,7 @@ async def handle_file(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
         await update.message.reply_text("🚫 पहले चैनल जॉइन करें!")
         return
 
-    if user_id not in active_users:
+    if user_id not in user_limits:
         await update.message.reply_text("⚠️ **Please use /host first!**", parse_mode="Markdown")
         return
 
@@ -105,8 +124,6 @@ async def handle_file(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
     new_file = await file.get_file()
     await new_file.download_to_drive(file_path)
 
-    user_files[user_id] = file_path
-
     await update.message.reply_text(f"📂 **File '{file.file_name}' is being hosted...**", parse_mode="Markdown")
 
     asyncio.create_task(run_python_script(update, file_path, user_id))
@@ -119,8 +136,6 @@ async def run_python_script(update: Update, file_path: str, user_id: int):
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE
         )
-
-        running_processes[user_id] = process
 
         stdout_lines = []
         stderr_lines = []
@@ -143,8 +158,6 @@ async def run_python_script(update: Update, file_path: str, user_id: int):
 
         result_message = f"✅ **Execution Output:**\n```{stdout}```\n❌ **Errors:**\n```{stderr}```"
         await update.message.reply_text(result_message, parse_mode="Markdown")
-
-        del running_processes[user_id]
 
     except Exception as e:
         await update.message.reply_text(f"❌ **Error:** `{str(e)}`", parse_mode="Markdown")
