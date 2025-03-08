@@ -4,7 +4,6 @@ import time
 from dotenv import load_dotenv
 from telegram import Update
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
-
 # ✅ बॉट टोकन और चैनल डिटेल्स लोड करना
 load_dotenv()
 TOKEN = os.getenv("BOT_TOKEN")  # .env से टोकन लोड करें
@@ -25,11 +24,13 @@ admins = load_users(admins_file)
 admins.add(ADMIN)  # मुख्य एडमिन को एडमिन लिस्ट में सुनिश्चित करें
 approved_users = load_users(approved_users_file)
 
-# ✅ यूज़र डेटा (लिमिट ट्रैकिंग)
+
+# ✅ नॉर्मल यूज़र डेटा (लिमिट ट्रैकिंग)
 normal_user_data = {}
 active_users = set()
 user_files = {}
 running_processes = {}
+script_timers = {}  # ✅ स्क्रिप्ट टाइमर ट्रैकिंग
 
 # ✅ एडमिन सेव करने का फंक्शन
 def save_users(filename, user_set):
@@ -109,13 +110,45 @@ async def host(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     active_users.add(user_id)
     await update.message.reply_text("📂 **अब आप `.py` फाइल भेज सकते हैं, बॉट उसे होस्ट करेगा।**", parse_mode="Markdown")
 
-# ✅ Python फ़ाइल होस्ट करने का फंक्शन (LIMIT FIXED)
+# ✅ स्क्रिप्ट होस्टिंग लिमिट चेक (अब 20 घंटे की लिमिट जोड़ दी गई)
+def can_host_script(user_id: int) -> bool:
+    if user_id in admins or user_id in approved_users:
+        return True  
+
+    now = time.time()
+
+    if user_id not in normal_user_data:
+        normal_user_data[user_id] = {"count": 0, "start_time": now}
+
+    user_info = normal_user_data[user_id]
+
+    if user_info["count"] >= 2:
+        if now - user_info["start_time"] >= 24 * 3600:  # 24 घंटे बाद लिमिट रीसेट
+            user_info["count"] = 0  
+            user_info["start_time"] = now  
+        else:
+            return False
+
+    return True  
+
+
+# ✅ 20 घंटे बाद स्क्रिप्ट ऑटो स्टॉप करने का फंक्शन
+async def stop_script_after_timeout(user_id: int, file_path: str):
+    await asyncio.sleep(20 * 3600)  # 20 घंटे वेट करें
+
+    if user_id in running_processes:
+        process = running_processes[user_id]
+        process.terminate()  # ✅ स्क्रिप्ट को रोकें
+        del running_processes[user_id]
+
+        if user_id in user_files:
+            os.remove(user_files[user_id])  # ✅ फाइल डिलीट करें
+            del user_files[user_id]
+
+        await context.bot.send_message(user_id, f"⏳ **Script '{file_path}' has been stopped after 20 hours.**")
+# ✅ Python फ़ाइल होस्ट करने का फंक्शन (LIMIT + 20 घंटे TIMER)
 async def handle_file(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     user_id = update.message.from_user.id
-    if not await is_user_joined(user_id, context):
-        await update.message.reply_text("🚫 पहले चैनल जॉइन करें!")
-        return
-
     if user_id not in active_users:
         await update.message.reply_text("⚠️ **कृपया पहले /host कमांड भेजें!**", parse_mode="Markdown")
         return
@@ -141,9 +174,12 @@ async def handle_file(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
     if user_id not in normal_user_data:
         normal_user_data[user_id] = {"count": 0, "start_time": time.time()}
 
-    normal_user_data[user_id]["count"] += 1  # ✅ स्क्रिप्ट अपलोड के बाद काउंट बढ़ाएँ
+    normal_user_data[user_id]["count"] += 1  
 
     await update.message.reply_text(f"📂 **File '{file.file_name}' is being hosted...**", parse_mode="Markdown")
+
+    # ✅ 20 घंटे बाद स्क्रिप्ट ऑटो स्टॉप
+    asyncio.create_task(stop_script_after_timeout(user_id, file_path))
 
     asyncio.create_task(run_python_script(update, file_path, user_id))
 
@@ -185,6 +221,7 @@ async def run_python_script(update: Update, file_path: str, user_id: int):
 
     except Exception as e:
         await update.message.reply_text(f"❌ **Error:** `{str(e)}`", parse_mode="Markdown")
+
 
 # ✅ बॉट स्टार्ट फंक्शन
 def main():
