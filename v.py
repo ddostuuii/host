@@ -7,7 +7,7 @@ from telegram.ext import Application, CommandHandler, MessageHandler, filters, C
 
 # ✅ बॉट टोकन और चैनल डिटेल्स लोड करना
 load_dotenv()
-TOKEN = os.getenv("BOT_TOKEN")
+TOKEN = os.getenv("BOT_TOKEN")  # .env से टोकन लोड करें
 CHANNEL_ID = int(os.getenv("CHANNEL_ID", "-1002363906868"))
 ADMIN = int(os.getenv("ADMIN_ID", "7017469802"))
 
@@ -22,30 +22,14 @@ def load_users(filename):
     return set()
 
 admins = load_users(admins_file)
-admins.add(ADMIN)
+admins.add(ADMIN)  # मुख्य एडमिन को एडमिन लिस्ट में सुनिश्चित करें
 approved_users = load_users(approved_users_file)
 
-# ✅ Normal Users की लिमिट ट्रैकिंग
-user_limits = {}
-
-def can_host_script(user_id: int) -> bool:
-    """Check if the user can host a script based on limits."""
-    if user_id in admins or user_id in approved_users:
-        return True  
-
-    now = time.time()
-    user_data = user_limits.get(user_id, {"count": 0, "start_time": now})
-
-    if now - user_data["start_time"] >= 24 * 3600:
-        user_data["count"] = 0
-        user_data["start_time"] = now
-
-    if user_data["count"] >= 2:
-        return False
-
-    user_data["count"] += 1
-    user_limits[user_id] = user_data
-    return True
+# ✅ यूज़र डेटा (लिमिट ट्रैकिंग)
+normal_user_data = {}
+active_users = set()
+user_files = {}
+running_processes = {}
 
 # ✅ एडमिन सेव करने का फंक्शन
 def save_users(filename, user_set):
@@ -82,6 +66,27 @@ async def is_user_joined(user_id: int, context: ContextTypes.DEFAULT_TYPE) -> bo
     except:
         return False
 
+# ✅ स्क्रिप्ट होस्टिंग लिमिट चेक
+def can_host_script(user_id: int) -> bool:
+    if user_id in admins or user_id in approved_users:
+        return True  
+
+    now = time.time()
+
+    if user_id not in normal_user_data:
+        normal_user_data[user_id] = {"count": 0, "start_time": now}
+
+    user_info = normal_user_data[user_id]
+
+    if user_info["count"] >= 2:
+        if now - user_info["start_time"] >= 24 * 3600:
+            user_info["count"] = 0  
+            user_info["start_time"] = now  
+        else:
+            return False
+
+    return True  
+
 # ✅ /start Command
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     user_id = update.message.from_user.id
@@ -101,6 +106,7 @@ async def host(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         await update.message.reply_text("⏳ **आप 4 घंटे बाद फिर से स्क्रिप्ट होस्ट कर सकते हैं।**", parse_mode="Markdown")
         return
 
+    active_users.add(user_id)
     await update.message.reply_text("📂 **अब आप `.py` फाइल भेज सकते हैं, बॉट उसे होस्ट करेगा।**", parse_mode="Markdown")
 
 # ✅ Python फ़ाइल होस्ट करने का फंक्शन
@@ -110,8 +116,8 @@ async def handle_file(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
         await update.message.reply_text("🚫 पहले चैनल जॉइन करें!")
         return
 
-    if user_id not in user_limits:
-        await update.message.reply_text("⚠️ **Please use /host first!**", parse_mode="Markdown")
+    if user_id not in active_users:
+        await update.message.reply_text("⚠️ **कृपया पहले /host कमांड भेजें!**", parse_mode="Markdown")
         return
 
     file = update.message.document
@@ -123,6 +129,8 @@ async def handle_file(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
     os.makedirs("hosted_scripts", exist_ok=True)
     new_file = await file.get_file()
     await new_file.download_to_drive(file_path)
+
+    user_files[user_id] = file_path
 
     await update.message.reply_text(f"📂 **File '{file.file_name}' is being hosted...**", parse_mode="Markdown")
 
@@ -136,6 +144,8 @@ async def run_python_script(update: Update, file_path: str, user_id: int):
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE
         )
+
+        running_processes[user_id] = process
 
         stdout_lines = []
         stderr_lines = []
@@ -159,6 +169,8 @@ async def run_python_script(update: Update, file_path: str, user_id: int):
         result_message = f"✅ **Execution Output:**\n```{stdout}```\n❌ **Errors:**\n```{stderr}```"
         await update.message.reply_text(result_message, parse_mode="Markdown")
 
+        del running_processes[user_id]
+
     except Exception as e:
         await update.message.reply_text(f"❌ **Error:** `{str(e)}`", parse_mode="Markdown")
 
@@ -167,7 +179,7 @@ def main():
     app = Application.builder().token(TOKEN).build()
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("host", host))
-    app.add_handler(CommandHandler("add_admin", add_admin, filters=filters.ChatType.PRIVATE))
+    app.add_handler(CommandHandler("add_admin", add_admin))
     app.add_handler(MessageHandler(filters.Document.ALL, handle_file))
     app.run_polling()
 
