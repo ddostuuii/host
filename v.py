@@ -5,9 +5,9 @@ from dotenv import load_dotenv
 from telegram import Update
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
 
-# ✅ बॉट टोकन और चैनल डिटेल्स लोड करना
+# ✅ बॉट टोकन और एडमिन डिटेल्स लोड करना
 load_dotenv()
-TOKEN = os.getenv("8024990900:AAEVjj9q-b3SIEakZPfGOnq03rSNwQWniDU")  # .env से टोकन लोड करें
+TOKEN = os.getenv("BOT_TOKEN")  # .env से टोकन लोड करें
 CHANNEL_ID = int(os.getenv("CHANNEL_ID", "-1002363906868"))
 ADMIN = int(os.getenv("ADMIN_ID", "7017469802"))
 
@@ -22,7 +22,7 @@ def load_users(filename):
     return set()
 
 admins = load_users(admins_file)
-admins.add(ADMIN)  # मुख्य एडमिन को एडमिन लिस्ट में सुनिश्चित करें
+admins.add(ADMIN)  # मुख्य एडमिन को लिस्ट में रखना जरूरी
 approved_users = load_users(approved_users_file)
 
 # ✅ यूज़र डेटा (लिमिट ट्रैकिंग)
@@ -66,27 +66,6 @@ async def is_user_joined(user_id: int, context: ContextTypes.DEFAULT_TYPE) -> bo
     except:
         return False
 
-# ✅ स्क्रिप्ट होस्टिंग लिमिट चेक
-def can_host_script(user_id: int) -> bool:
-    if user_id in admins or user_id in approved_users:
-        return True  
-
-    now = time.time()
-
-    if user_id not in normal_user_data:
-        normal_user_data[user_id] = {"count": 0, "start_time": now}
-
-    user_info = normal_user_data[user_id]
-
-    if user_info["count"] >= 2:
-        if now - user_info["start_time"] >= 24 * 3600:
-            user_info["count"] = 0  
-            user_info["start_time"] = now  
-        else:
-            return False
-
-    return True  
-
 # ✅ /start Command
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     user_id = update.message.from_user.id
@@ -100,10 +79,6 @@ async def host(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     user_id = update.message.from_user.id
     if not await is_user_joined(user_id, context):
         await update.message.reply_text("🚫 पहले चैनल जॉइन करें!")
-        return
-
-    if not can_host_script(user_id):
-        await update.message.reply_text("⏳ **आप 4 घंटे बाद फिर से स्क्रिप्ट होस्ट कर सकते हैं।**", parse_mode="Markdown")
         return
 
     active_users.add(user_id)
