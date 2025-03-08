@@ -9,13 +9,13 @@ TOKEN = "8024990900:AAEVjj9q-b3SIEakZPfGOnq03rSNwQWniDU"
 CHANNEL_USERNAME = "seedhe_maut"
 CHANNEL_ID = -1002363906868
 
-# ✅ एडमिन्स की लिस्ट (डायरेक्ट जोड़ें)
+# ✅ एडमिन लोड करने का फ़ंक्शन
 def load_admins():
     try:
         with open("admins.txt", "r") as f:
             return {int(line.strip()) for line in f if line.strip().isdigit()}
     except FileNotFoundError:
-        return {7017469802, 987654321}  # Default Admins
+        return {7017469802, 987654321}  
 
 admins = load_admins()
 approved_users = set()  
@@ -41,19 +41,21 @@ def can_host_script(user_id: int) -> bool:
         normal_user_data[user_id] = {"count": 0, "start_time": 0}
 
     user_info = normal_user_data[user_id]
+    now = time.time()
+
     if user_info["count"] >= 2:
-        return False
+        if now - user_info["start_time"] >= 24 * 3600:
+            user_info["count"] = 0  
+            user_info["start_time"] = now  
+        else:
+            return False
 
-    if time.time() - user_info["start_time"] >= 24 * 3600:
-        user_info["count"] = 0  
-        user_info["start_time"] = 0  
-
-    if user_info["start_time"] and time.time() - user_info["start_time"] < 20 * 3600:
-        return True
-    elif user_info["start_time"] and time.time() - user_info["start_time"] < 24 * 3600:
-        return False
+    if now - user_info["start_time"] < 20 * 3600:
+        return True  
+    elif now - user_info["start_time"] < 24 * 3600:
+        return False  
     else:
-        return True
+        return True  
 
 # ✅ /start Command
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -75,8 +77,6 @@ async def host(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         return
 
     if user_id not in admins and user_id not in approved_users:
-        if user_id not in normal_user_data:
-            normal_user_data[user_id] = {"count": 0, "start_time": 0}
         normal_user_data[user_id]["count"] += 1
         if normal_user_data[user_id]["count"] == 1:
             normal_user_data[user_id]["start_time"] = time.time()
