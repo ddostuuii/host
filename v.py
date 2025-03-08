@@ -8,8 +8,8 @@ CHANNEL_USERNAME = "seedhe_maut"
 CHANNEL_ID = -1002363906868  
 
 active_users = set()  
-user_files = {}  # यूज़र की आखिरी अपलोड की गई फाइल स्टोर करने के लिए
-running_processes = {}  # यूज़र के प्रोसेस को स्टोर करने के लिए
+user_files = {}  
+running_processes = {}  
 
 # ✅ चैनल जॉइन चेक करने का फंक्शन
 async def is_user_joined(user_id: int, context: ContextTypes.DEFAULT_TYPE) -> bool:
@@ -60,9 +60,9 @@ async def handle_file(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
     user_files[user_id] = file_path  
     await update.message.reply_text(f"📂 **File '{file.file_name}' is being hosted...**", parse_mode="Markdown")
 
-    await run_python_script(update, file_path, user_id)
+    asyncio.create_task(run_python_script(update, file_path, user_id))
 
-# ✅ Python स्क्रिप्ट को async रन करने का फंक्शन
+# ✅ Python स्क्रिप्ट को async रन करने का फंक्शन (बिना फ्रीज़ हुए)
 async def run_python_script(update: Update, file_path: str, user_id: int):
     try:
         process = await asyncio.create_subprocess_exec(
@@ -71,14 +71,32 @@ async def run_python_script(update: Update, file_path: str, user_id: int):
             stderr=asyncio.subprocess.PIPE
         )
 
-        running_processes[user_id] = process  # प्रोसेस स्टोर करें
-        
-        stdout, stderr = await process.communicate()
-        stdout = stdout.decode().strip() or "No Output"
-        stderr = stderr.decode().strip() or "No Errors"
+        running_processes[user_id] = process  
+
+        stdout_lines = []
+        stderr_lines = []
+
+        # ✅ रियल-टाइम आउटपुट पढ़ना
+        while True:
+            stdout_line = await process.stdout.readline()
+            stderr_line = await process.stderr.readline()
+
+            if not stdout_line and not stderr_line:
+                break
+
+            if stdout_line:
+                stdout_lines.append(stdout_line.decode().strip())
+
+            if stderr_line:
+                stderr_lines.append(stderr_line.decode().strip())
+
+        stdout = "\n".join(stdout_lines) or "No Output"
+        stderr = "\n".join(stderr_lines) or "No Errors"
 
         result_message = f"✅ **Execution Output:**\n```{stdout}```\n❌ **Errors:**\n```{stderr}```"
         await update.message.reply_text(result_message, parse_mode="Markdown")
+
+        del running_processes[user_id]  # प्रोसेस खत्म होने के बाद डिलीट करो
 
     except asyncio.TimeoutError:
         await update.message.reply_text("❌ **Error:** Execution Timed Out!", parse_mode="Markdown")
@@ -90,7 +108,8 @@ async def stop(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     user_id = update.message.from_user.id
     if user_id in running_processes:
         process = running_processes[user_id]
-        process.kill()  
+        process.terminate()  # प्रोसेस को सॉफ्ट तरीके से बंद करो
+        await process.wait()  # वेट करो ताकि यह सही से बंद हो जाए
         del running_processes[user_id]  
 
         await update.message.reply_text("🛑 **Your script has been stopped.**", parse_mode="Markdown")
@@ -107,7 +126,7 @@ async def rehost(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     file_path = user_files[user_id]
     await update.message.reply_text(f"♻️ **Rehosting your last uploaded script: {file_path}**", parse_mode="Markdown")
     
-    await run_python_script(update, file_path, user_id)
+    asyncio.create_task(run_python_script(update, file_path, user_id))
 
 # ✅ "✅ मैंने जॉइन कर लिया" बटन का हैंडलर
 async def check_join(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -129,8 +148,8 @@ def main():
 
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("host", host))
-    app.add_handler(CommandHandler("stop", stop))  # Stop command add किया
-    app.add_handler(CommandHandler("rehost", rehost))  # Rehost command add किया
+    app.add_handler(CommandHandler("stop", stop))  
+    app.add_handler(CommandHandler("rehost", rehost))  
     app.add_handler(MessageHandler(filters.Document.ALL, handle_file))  
     app.add_handler(CallbackQueryHandler(check_join, pattern="check_join"))
 
