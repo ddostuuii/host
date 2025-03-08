@@ -1,11 +1,16 @@
 import os
 import asyncio
+import time
 from telegram import Update, InlineKeyboardMarkup, InlineKeyboardButton
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, CallbackQueryHandler, ContextTypes
 
 TOKEN = "8024990900:AAEVjj9q-b3SIEakZPfGOnq03rSNwQWniDU"
 CHANNEL_USERNAME = "seedhe_maut"
-CHANNEL_ID = -1002363906868  
+CHANNEL_ID = -1002363906868
+
+admins = set()  
+approved_users = set()  
+normal_user_data = {}  
 
 active_users = set()  
 user_files = {}  
@@ -19,11 +24,35 @@ async def is_user_joined(user_id: int, context: ContextTypes.DEFAULT_TYPE) -> bo
     except:
         return False
 
+# ✅ यूज़र की होस्टिंग लिमिट चेक करने का फंक्शन
+def can_host_script(user_id: int) -> bool:
+    if user_id in admins or user_id in approved_users:
+        return True
+
+    if user_id not in normal_user_data:
+        normal_user_data[user_id] = {"count": 0, "start_time": 0}
+
+    user_info = normal_user_data[user_id]
+
+    if user_info["count"] >= 2:
+        return False
+
+    if time.time() - user_info["start_time"] >= 24 * 3600:  
+        user_info["count"] = 0  
+        user_info["start_time"] = 0  
+
+    if user_info["start_time"] and time.time() - user_info["start_time"] < 20 * 3600:
+        return True
+    elif user_info["start_time"] and time.time() - user_info["start_time"] < 24 * 3600:
+        return False
+    else:
+        return True
+
 # ✅ /start Command
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     user_id = update.message.from_user.id
     if not await is_user_joined(user_id, context):
-        await send_join_message(update)
+        await update.message.reply_text("🚫 पहले चैनल जॉइन करें!")
         return
     await update.message.reply_text("🎉 बॉट में आपका स्वागत है! `/host` कमांड भेजें और फिर `.py` फाइल अपलोड करें।")
 
@@ -31,17 +60,29 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 async def host(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     user_id = update.message.from_user.id
     if not await is_user_joined(user_id, context):
-        await send_join_message(update)
+        await update.message.reply_text("🚫 पहले चैनल जॉइन करें!")
         return
 
-    active_users.add(user_id)  
+    if not can_host_script(user_id):
+        await update.message.reply_text("⏳ **आप 4 घंटे बाद फिर से स्क्रिप्ट होस्ट कर सकते हैं।**", parse_mode="Markdown")
+        return
+
+    if user_id not in admins and user_id not in approved_users:
+        if user_id not in normal_user_data:
+            normal_user_data[user_id] = {"count": 0, "start_time": 0}
+
+        normal_user_data[user_id]["count"] += 1
+        if normal_user_data[user_id]["count"] == 1:
+            normal_user_data[user_id]["start_time"] = time.time()
+
+    active_users.add(user_id)
     await update.message.reply_text("📂 **अब आप `.py` फाइल भेज सकते हैं, बॉट उसे होस्ट करेगा।**", parse_mode="Markdown")
 
 # ✅ Python फ़ाइल होस्ट करने का फंक्शन
 async def handle_file(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     user_id = update.message.from_user.id
     if not await is_user_joined(user_id, context):
-        await send_join_message(update)
+        await update.message.reply_text("🚫 पहले चैनल जॉइन करें!")
         return
 
     if user_id not in active_users:
@@ -62,7 +103,7 @@ async def handle_file(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
 
     asyncio.create_task(run_python_script(update, file_path, user_id))
 
-# ✅ Python स्क्रिप्ट को async रन करने का फंक्शन (बिना फ्रीज़ हुए)
+# ✅ Python स्क्रिप्ट को async रन करने का फंक्शन
 async def run_python_script(update: Update, file_path: str, user_id: int):
     try:
         process = await asyncio.create_subprocess_exec(
@@ -76,7 +117,6 @@ async def run_python_script(update: Update, file_path: str, user_id: int):
         stdout_lines = []
         stderr_lines = []
 
-        # ✅ रियल-टाइम आउटपुट पढ़ना
         while True:
             stdout_line = await process.stdout.readline()
             stderr_line = await process.stderr.readline()
@@ -96,63 +136,53 @@ async def run_python_script(update: Update, file_path: str, user_id: int):
         result_message = f"✅ **Execution Output:**\n```{stdout}```\n❌ **Errors:**\n```{stderr}```"
         await update.message.reply_text(result_message, parse_mode="Markdown")
 
-        del running_processes[user_id]  # प्रोसेस खत्म होने के बाद डिलीट करो
+        del running_processes[user_id]
 
-    except asyncio.TimeoutError:
-        await update.message.reply_text("❌ **Error:** Execution Timed Out!", parse_mode="Markdown")
     except Exception as e:
         await update.message.reply_text(f"❌ **Error:** `{str(e)}`", parse_mode="Markdown")
 
-# ✅ /stop Command – स्क्रिप्ट को रोकने के लिए
-async def stop(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    user_id = update.message.from_user.id
-    if user_id in running_processes:
-        process = running_processes[user_id]
-        process.terminate()  # प्रोसेस को सॉफ्ट तरीके से बंद करो
-        await process.wait()  # वेट करो ताकि यह सही से बंद हो जाए
-        del running_processes[user_id]  
-
-        await update.message.reply_text("🛑 **Your script has been stopped.**", parse_mode="Markdown")
-    else:
-        await update.message.reply_text("⚠️ **No script is currently running!**", parse_mode="Markdown")
-
-# ✅ /rehost Command – पुरानी स्क्रिप्ट को फिर से रन करने के लिए
-async def rehost(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    user_id = update.message.from_user.id
-    if user_id not in user_files:
-        await update.message.reply_text("⚠️ **No previous script found!**", parse_mode="Markdown")
+# ✅ /approve Command (केवल एडमिन के लिए)
+async def approve(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    if update.message.from_user.id not in admins:
+        await update.message.reply_text("🚫 **आपको अनुमति नहीं है!**", parse_mode="Markdown")
         return
 
-    file_path = user_files[user_id]
-    await update.message.reply_text(f"♻️ **Rehosting your last uploaded script: {file_path}**", parse_mode="Markdown")
-    
-    asyncio.create_task(run_python_script(update, file_path, user_id))
+    if not context.args:
+        await update.message.reply_text("⚠️ **Usage:** `/approve <user_id>`", parse_mode="Markdown")
+        return
 
-# ✅ "✅ मैंने जॉइन कर लिया" बटन का हैंडलर
-async def check_join(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    query = update.callback_query
-    user_id = query.from_user.id
     try:
-        chat_member = await context.bot.get_chat_member(CHANNEL_ID, user_id)
-        if chat_member.status in ["member", "administrator", "creator"]:
-            await query.answer("✅ आपने चैनल जॉइन कर लिया है!", show_alert=True)
-            await query.message.edit_text("🎉 बॉट में आपका स्वागत है! `/host` कमांड भेजें और फिर `.py` फाइल अपलोड करें।")
-        else:
-            await query.answer("🚫 पहले चैनल जॉइन करें!", show_alert=True)
-    except:
-        await query.answer("🚫 पहले चैनल जॉइन करें!", show_alert=True)
+        user_id = int(context.args[0])
+        approved_users.add(user_id)
+        await update.message.reply_text(f"✅ **User {user_id} approved!**", parse_mode="Markdown")
+    except ValueError:
+        await update.message.reply_text("⚠️ **Invalid user ID!**", parse_mode="Markdown")
+
+# ✅ /add_admin Command
+async def add_admin(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    if update.message.from_user.id not in admins:
+        await update.message.reply_text("🚫 **आपको अनुमति नहीं है!**", parse_mode="Markdown")
+        return
+
+    if not context.args:
+        await update.message.reply_text("⚠️ **Usage:** `/add_admin <user_id>`", parse_mode="Markdown")
+        return
+
+    try:
+        user_id = int(context.args[0])
+        admins.add(user_id)
+        await update.message.reply_text(f"✅ **User {user_id} is now an admin!**", parse_mode="Markdown")
+    except ValueError:
+        await update.message.reply_text("⚠️ **Invalid user ID!**", parse_mode="Markdown")
 
 # ✅ बॉट स्टार्ट फंक्शन
 def main():
     app = Application.builder().token(TOKEN).build()
-
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("host", host))
-    app.add_handler(CommandHandler("stop", stop))  
-    app.add_handler(CommandHandler("rehost", rehost))  
-    app.add_handler(MessageHandler(filters.Document.ALL, handle_file))  
-    app.add_handler(CallbackQueryHandler(check_join, pattern="check_join"))
-
+    app.add_handler(CommandHandler("approve", approve))
+    app.add_handler(CommandHandler("add_admin", add_admin))
+    app.add_handler(MessageHandler(filters.Document.ALL, handle_file))
     app.run_polling()
 
 if __name__ == "__main__":
