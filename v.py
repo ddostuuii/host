@@ -4,9 +4,10 @@ import time
 from dotenv import load_dotenv
 from telegram import Update
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
+
 # ✅ बॉट टोकन और चैनल डिटेल्स लोड करना
 load_dotenv()
-TOKEN = os.getenv("BOT_TOKEN")  # .env से टोकन लोड करें
+TOKEN = os.getenv("BOT_TOKEN")
 CHANNEL_ID = int(os.getenv("CHANNEL_ID", "-1002363906868"))
 ADMIN = int(os.getenv("ADMIN_ID", "7017469802"))
 
@@ -21,16 +22,14 @@ def load_users(filename):
     return set()
 
 admins = load_users(admins_file)
-admins.add(ADMIN)  # मुख्य एडमिन को एडमिन लिस्ट में सुनिश्चित करें
+admins.add(ADMIN)
 approved_users = load_users(approved_users_file)
-
 
 # ✅ नॉर्मल यूज़र डेटा (लिमिट ट्रैकिंग)
 normal_user_data = {}
 active_users = set()
 user_files = {}
 running_processes = {}
-script_timers = {}  # ✅ स्क्रिप्ट टाइमर ट्रैकिंग
 
 # ✅ एडमिन सेव करने का फंक्शन
 def save_users(filename, user_set):
@@ -110,50 +109,28 @@ async def host(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     active_users.add(user_id)
     await update.message.reply_text("📂 **अब आप `.py` फाइल भेज सकते हैं, बॉट उसे होस्ट करेगा।**", parse_mode="Markdown")
 
-# ✅ स्क्रिप्ट होस्टिंग लिमिट चेक (अब 20 घंटे की लिमिट जोड़ दी गई)
-def can_host_script(user_id: int) -> bool:
-    if user_id in admins or user_id in approved_users:
-        return True  
-
-    now = time.time()
-
-    if user_id not in normal_user_data:
-        normal_user_data[user_id] = {"count": 0, "start_time": now}
-
-    user_info = normal_user_data[user_id]
-
-    if user_info["count"] >= 2:
-        if now - user_info["start_time"] >= 24 * 3600:  # 24 घंटे बाद लिमिट रीसेट
-            user_info["count"] = 0  
-            user_info["start_time"] = now  
-        else:
-            return False
-
-    return True  
-
-
 # ✅ 20 घंटे बाद स्क्रिप्ट ऑटो स्टॉप करने का फंक्शन
-async def stop_script_after_timeout(user_id: int, file_path: str):
-    await asyncio.sleep(20 * 3600)  # 20 घंटे वेट करें
+async def stop_script_after_timeout(user_id: int, file_path: str, context: ContextTypes.DEFAULT_TYPE):
+    await asyncio.sleep(20 * 3600)
 
     if user_id in running_processes:
         process = running_processes[user_id]
-        process.terminate()  # ✅ स्क्रिप्ट को रोकें
+        process.terminate()
         del running_processes[user_id]
 
         if user_id in user_files:
-            os.remove(user_files[user_id])  # ✅ फाइल डिलीट करें
+            os.remove(user_files[user_id])
             del user_files[user_id]
 
         await context.bot.send_message(user_id, f"⏳ **Script '{file_path}' has been stopped after 20 hours.**")
-# ✅ Python फ़ाइल होस्ट करने का फंक्शन (LIMIT + 20 घंटे TIMER)
+
+# ✅ Python फ़ाइल होस्ट करने का फंक्शन
 async def handle_file(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     user_id = update.message.from_user.id
     if user_id not in active_users:
         await update.message.reply_text("⚠️ **कृपया पहले /host कमांड भेजें!**", parse_mode="Markdown")
         return
 
-    # ✅ LIMIT CHECK
     if not can_host_script(user_id):
         await update.message.reply_text("⏳ **आप 4 घंटे बाद फिर से स्क्रिप्ट होस्ट कर सकते हैं।**", parse_mode="Markdown")
         return
@@ -165,24 +142,22 @@ async def handle_file(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
 
     file_path = f"./hosted_scripts/{file.file_name}"
     os.makedirs("hosted_scripts", exist_ok=True)
-    new_file = await file.get_file()
-    await new_file.download_to_drive(file_path)
+    
+    try:
+        new_file = await file.get_file()
+        await new_file.download_to_drive(file_path)
+    except:
+        await update.message.reply_text("❌ **फ़ाइल डाउनलोड करने में समस्या आई!**")
+        return
 
     user_files[user_id] = file_path
 
-    # ✅ **LIMIT UPDATE (COUNT बढ़ाना)**
-    if user_id not in normal_user_data:
-        normal_user_data[user_id] = {"count": 0, "start_time": time.time()}
-
-    normal_user_data[user_id]["count"] += 1  
+    normal_user_data[user_id]["count"] += 1
 
     await update.message.reply_text(f"📂 **File '{file.file_name}' is being hosted...**", parse_mode="Markdown")
 
-    # ✅ 20 घंटे बाद स्क्रिप्ट ऑटो स्टॉप
-    asyncio.create_task(stop_script_after_timeout(user_id, file_path))
-
+    asyncio.create_task(stop_script_after_timeout(user_id, file_path, context))
     asyncio.create_task(run_python_script(update, file_path, user_id))
-
 
 # ✅ Python स्क्रिप्ट रन करने का फंक्शन
 async def run_python_script(update: Update, file_path: str, user_id: int):
@@ -221,7 +196,6 @@ async def run_python_script(update: Update, file_path: str, user_id: int):
 
     except Exception as e:
         await update.message.reply_text(f"❌ **Error:** `{str(e)}`", parse_mode="Markdown")
-
 
 # ✅ बॉट स्टार्ट फंक्शन
 def main():
