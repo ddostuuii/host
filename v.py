@@ -1,22 +1,62 @@
 import os
 import asyncio
 import time
+from dotenv import load_dotenv
 from telegram import Update
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
 
-# ✅ बॉट टोकन और चैनल डिटेल्स
-TOKEN = "8024990900:AAEVjj9q-b3SIEakZPfGOnq03rSNwQWniDU"
-CHANNEL_ID = -1002363906868
+# ✅ बॉट टोकन और चैनल डिटेल्स लोड करना
+load_dotenv()
+TOKEN = os.getenv("8024990900:AAEVjj9q-b3SIEakZPfGOnq03rSNwQWniDU")  # .env से टोकन लोड करें
+CHANNEL_ID = int(os.getenv("CHANNEL_ID", "-1002363906868"))
+ADMIN = int(os.getenv("ADMIN_ID", "7017469802"))
 
-# ✅ एडमिन और अप्रूव्ड यूज़र्स
-admins = {7017469802, 987654321}  
-approved_users = set()  
+# ✅ एडमिन और अप्रूव्ड यूज़र फ़ाइल लोड करना
+admins_file = "admins.txt"
+approved_users_file = "approved_users.txt"
 
-# ✅ नॉर्मल यूज़र डेटा (लिमिट ट्रैक करने के लिए)
-normal_user_data = {}  
-active_users = set()  
-user_files = {}  
-running_processes = {}  
+def load_users(filename):
+    if os.path.exists(filename):
+        with open(filename, "r") as f:
+            return set(map(int, f.read().splitlines()))
+    return set()
+
+admins = load_users(admins_file)
+admins.add(ADMIN)  # मुख्य एडमिन को एडमिन लिस्ट में सुनिश्चित करें
+approved_users = load_users(approved_users_file)
+
+# ✅ यूज़र डेटा (लिमिट ट्रैकिंग)
+normal_user_data = {}
+active_users = set()
+user_files = {}
+running_processes = {}
+
+# ✅ एडमिन सेव करने का फंक्शन
+def save_users(filename, user_set):
+    with open(filename, "w") as f:
+        f.write("\n".join(map(str, user_set)))
+
+# ✅ /add_admin Command
+async def add_admin(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    user_id = update.message.from_user.id
+    if user_id not in admins:
+        await update.message.reply_text("🚫 **सिर्फ एडमिन नए एडमिन जोड़ सकते हैं!**", parse_mode="Markdown")
+        return
+
+    if not context.args:
+        await update.message.reply_text("⚠️ **कृपया एक यूज़र आईडी दें!**\nउदाहरण: `/add_admin 123456789`", parse_mode="Markdown")
+        return
+
+    try:
+        new_admin = int(context.args[0])
+        if new_admin in admins:
+            await update.message.reply_text("✅ **यह यूज़र पहले से ही एडमिन है!**", parse_mode="Markdown")
+        else:
+            admins.add(new_admin)
+            save_users(admins_file, admins)
+            await update.message.reply_text(f"✅ **यूज़र {new_admin} को एडमिन बना दिया गया है!**", parse_mode="Markdown")
+    except ValueError:
+        await update.message.reply_text("❌ **अमान्य यूज़र आईडी! कृपया सही संख्या दें।**", parse_mode="Markdown")
 
 # ✅ चैनल जॉइन चेक करने का फंक्शन
 async def is_user_joined(user_id: int, context: ContextTypes.DEFAULT_TYPE) -> bool:
@@ -38,7 +78,6 @@ def can_host_script(user_id: int) -> bool:
 
     user_info = normal_user_data[user_id]
 
-    # ✅ 20 घंटे में 2 स्क्रिप्ट की लिमिट
     if user_info["count"] >= 2:
         if now - user_info["start_time"] >= 24 * 3600:
             user_info["count"] = 0  
@@ -67,9 +106,6 @@ async def host(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         await update.message.reply_text("⏳ **आप 4 घंटे बाद फिर से स्क्रिप्ट होस्ट कर सकते हैं।**", parse_mode="Markdown")
         return
 
-    if user_id not in admins and user_id not in approved_users:
-        normal_user_data[user_id]["count"] = 0  # ✅ `/host` करने के बाद नई लिमिट स्टार्ट  
-
     active_users.add(user_id)
     await update.message.reply_text("📂 **अब आप `.py` फाइल भेज सकते हैं, बॉट उसे होस्ट करेगा।**", parse_mode="Markdown")
 
@@ -84,26 +120,17 @@ async def handle_file(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
         await update.message.reply_text("⚠️ **Please use /host first!**", parse_mode="Markdown")
         return
 
-    # ✅ अगर यूज़र 2 से अधिक फाइल भेज रहा है, तो रोके
-    if user_id in normal_user_data and normal_user_data[user_id]["count"] >= 2:
-        await update.message.reply_text("⚠️ **आप 20 घंटे में केवल 2 स्क्रिप्ट होस्ट कर सकते हैं!**", parse_mode="Markdown")
-        return
-
     file = update.message.document
     if not file.file_name.endswith(".py"):
         await update.message.reply_text("⚠️ **Please send a valid .py file!**", parse_mode="Markdown")
         return
 
     file_path = f"./hosted_scripts/{file.file_name}"
-    os.makedirs("hosted_scripts", exist_ok=True)  
+    os.makedirs("hosted_scripts", exist_ok=True)
     new_file = await file.get_file()
     await new_file.download_to_drive(file_path)
 
-    user_files[user_id] = file_path  
-
-    # ✅ स्क्रिप्ट काउंट बढ़ाना
-    if user_id not in admins and user_id not in approved_users:
-        normal_user_data[user_id]["count"] += 1
+    user_files[user_id] = file_path
 
     await update.message.reply_text(f"📂 **File '{file.file_name}' is being hosted...**", parse_mode="Markdown")
 
@@ -118,7 +145,7 @@ async def run_python_script(update: Update, file_path: str, user_id: int):
             stderr=asyncio.subprocess.PIPE
         )
 
-        running_processes[user_id] = process  
+        running_processes[user_id] = process
 
         stdout_lines = []
         stderr_lines = []
@@ -152,6 +179,7 @@ def main():
     app = Application.builder().token(TOKEN).build()
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("host", host))
+    app.add_handler(CommandHandler("add_admin", add_admin, filters=filters.ChatType.PRIVATE))
     app.add_handler(MessageHandler(filters.Document.ALL, handle_file))
     app.run_polling()
 
