@@ -58,6 +58,24 @@ async def add_admin(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     except ValueError:
         await update.message.reply_text("❌ **अमान्य यूज़र आईडी! कृपया सही संख्या दें।**", parse_mode="Markdown")
 
+# ✅ /stop_host Command
+async def stop_host(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    user_id = update.message.from_user.id
+
+    if user_id not in running_processes:
+        await update.message.reply_text("⚠️ **आपके लिए कोई भी स्क्रिप्ट चल नहीं रही!**", parse_mode="Markdown")
+        return
+
+    process = running_processes[user_id]
+    process.terminate()  # ✅ Script stop करें
+    del running_processes[user_id]
+
+    if user_id in user_files:
+        os.remove(user_files[user_id])  # ✅ Delete script file
+        del user_files[user_id]
+
+    await update.message.reply_text("🛑 **आपकी होस्ट की गई स्क्रिप्ट रोक दी गई है!**", parse_mode="Markdown")
+
 # ✅ चैनल जॉइन चेक करने का फंक्शन
 async def is_user_joined(user_id: int, context: ContextTypes.DEFAULT_TYPE) -> bool:
     try:
@@ -200,6 +218,7 @@ async def run_python_script(update: Update, file_path: str, user_id: int):
 # ✅ बॉट स्टार्ट फंक्शन
 def main():
     app = Application.builder().token(TOKEN).build()
+    app.add_handler(CommandHandler("stop_host", stop_host))
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("host", host))
     app.add_handler(CommandHandler("add_admin", add_admin))
