@@ -1,18 +1,25 @@
 import os
 import asyncio
 import time
-from telegram import Update, InlineKeyboardMarkup, InlineKeyboardButton
-from telegram.ext import Application, CommandHandler, MessageHandler, filters, CallbackQueryHandler, ContextTypes
+from telegram import Update
+from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
 
+# ✅ Bot Token & Channel Information
 TOKEN = "8024990900:AAEVjj9q-b3SIEakZPfGOnq03rSNwQWniDU"
 CHANNEL_USERNAME = "seedhe_maut"
 CHANNEL_ID = -1002363906868
-admins = {7017469802, 987654321}  # यहाँ अपने एडमिन्स के टेलीग्राम यूज़र ID डालें
 
-admins = set()  
+# ✅ एडमिन्स की लिस्ट (डायरेक्ट जोड़ें)
+def load_admins():
+    try:
+        with open("admins.txt", "r") as f:
+            return {int(line.strip()) for line in f if line.strip().isdigit()}
+    except FileNotFoundError:
+        return {7017469802, 987654321}  # Default Admins
+
+admins = load_admins()
 approved_users = set()  
 normal_user_data = {}  
-
 active_users = set()  
 user_files = {}  
 running_processes = {}  
@@ -25,7 +32,7 @@ async def is_user_joined(user_id: int, context: ContextTypes.DEFAULT_TYPE) -> bo
     except:
         return False
 
-# ✅ यूज़र की होस्टिंग लिमिट चेक करने का फंक्शन
+# ✅ स्क्रिप्ट होस्टिंग लिमिट चेक
 def can_host_script(user_id: int) -> bool:
     if user_id in admins or user_id in approved_users:
         return True
@@ -34,11 +41,10 @@ def can_host_script(user_id: int) -> bool:
         normal_user_data[user_id] = {"count": 0, "start_time": 0}
 
     user_info = normal_user_data[user_id]
-
     if user_info["count"] >= 2:
         return False
 
-    if time.time() - user_info["start_time"] >= 24 * 3600:  
+    if time.time() - user_info["start_time"] >= 24 * 3600:
         user_info["count"] = 0  
         user_info["start_time"] = 0  
 
@@ -71,7 +77,6 @@ async def host(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     if user_id not in admins and user_id not in approved_users:
         if user_id not in normal_user_data:
             normal_user_data[user_id] = {"count": 0, "start_time": 0}
-
         normal_user_data[user_id]["count"] += 1
         if normal_user_data[user_id]["count"] == 1:
             normal_user_data[user_id]["start_time"] = time.time()
@@ -95,7 +100,8 @@ async def handle_file(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
         await update.message.reply_text("⚠️ **Please send a valid .py file!**", parse_mode="Markdown")
         return
 
-    file_path = f"./{file.file_name}"
+    file_path = f"./hosted_scripts/{file.file_name}"
+    os.makedirs("hosted_scripts", exist_ok=True)  
     new_file = await file.get_file()
     await new_file.download_to_drive(file_path)
 
@@ -104,7 +110,7 @@ async def handle_file(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
 
     asyncio.create_task(run_python_script(update, file_path, user_id))
 
-# ✅ Python स्क्रिप्ट को async रन करने का फंक्शन
+# ✅ Python स्क्रिप्ट रन करने का फंक्शन
 async def run_python_script(update: Update, file_path: str, user_id: int):
     try:
         process = await asyncio.create_subprocess_exec(
@@ -142,23 +148,6 @@ async def run_python_script(update: Update, file_path: str, user_id: int):
     except Exception as e:
         await update.message.reply_text(f"❌ **Error:** `{str(e)}`", parse_mode="Markdown")
 
-# ✅ /approve Command (केवल एडमिन के लिए)
-async def approve(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    if update.message.from_user.id not in admins:
-        await update.message.reply_text("🚫 **आपको अनुमति नहीं है!**", parse_mode="Markdown")
-        return
-
-    if not context.args:
-        await update.message.reply_text("⚠️ **Usage:** `/approve <user_id>`", parse_mode="Markdown")
-        return
-
-    try:
-        user_id = int(context.args[0])
-        approved_users.add(user_id)
-        await update.message.reply_text(f"✅ **User {user_id} approved!**", parse_mode="Markdown")
-    except ValueError:
-        await update.message.reply_text("⚠️ **Invalid user ID!**", parse_mode="Markdown")
-
 # ✅ /add_admin Command
 async def add_admin(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     if update.message.from_user.id not in admins:
@@ -172,6 +161,9 @@ async def add_admin(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     try:
         user_id = int(context.args[0])
         admins.add(user_id)
+        with open("admins.txt", "a") as f:
+            f.write(f"{user_id}\n")  
+
         await update.message.reply_text(f"✅ **User {user_id} is now an admin!**", parse_mode="Markdown")
     except ValueError:
         await update.message.reply_text("⚠️ **Invalid user ID!**", parse_mode="Markdown")
@@ -181,7 +173,6 @@ def main():
     app = Application.builder().token(TOKEN).build()
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("host", host))
-    app.add_handler(CommandHandler("approve", approve))
     app.add_handler(CommandHandler("add_admin", add_admin))
     app.add_handler(MessageHandler(filters.Document.ALL, handle_file))
     app.run_polling()
