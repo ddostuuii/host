@@ -6,10 +6,9 @@ from telegram.ext import Application, CommandHandler, MessageHandler, filters, C
 
 # ✅ Bot Token & Channel Information
 TOKEN = "8024990900:AAEVjj9q-b3SIEakZPfGOnq03rSNwQWniDU"
-CHANNEL_USERNAME = "seedhe_maut"
 CHANNEL_ID = -1002363906868
 
-# ✅ एडमिन लोड करने का फ़ंक्शन
+# ✅ एडमिन्स लोड करने का फ़ंक्शन
 def load_admins():
     try:
         with open("admins.txt", "r") as f:
@@ -37,12 +36,14 @@ def can_host_script(user_id: int) -> bool:
     if user_id in admins or user_id in approved_users:
         return True
 
-    if user_id not in normal_user_data:
-        normal_user_data[user_id] = {"count": 0, "start_time": 0}
-
-    user_info = normal_user_data[user_id]
     now = time.time()
 
+    if user_id not in normal_user_data:
+        normal_user_data[user_id] = {"count": 0, "start_time": now}
+
+    user_info = normal_user_data[user_id]
+
+    # ✅ 20 घंटे में 2 स्क्रिप्ट की लिमिट
     if user_info["count"] >= 2:
         if now - user_info["start_time"] >= 24 * 3600:
             user_info["count"] = 0  
@@ -50,12 +51,7 @@ def can_host_script(user_id: int) -> bool:
         else:
             return False
 
-    if now - user_info["start_time"] < 20 * 3600:
-        return True  
-    elif now - user_info["start_time"] < 24 * 3600:
-        return False  
-    else:
-        return True  
+    return True  
 
 # ✅ /start Command
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -78,8 +74,7 @@ async def host(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 
     if user_id not in admins and user_id not in approved_users:
         normal_user_data[user_id]["count"] += 1
-        if normal_user_data[user_id]["count"] == 1:
-            normal_user_data[user_id]["start_time"] = time.time()
+        normal_user_data[user_id]["start_time"] = time.time()
 
     active_users.add(user_id)
     await update.message.reply_text("📂 **अब आप `.py` फाइल भेज सकते हैं, बॉट उसे होस्ट करेगा।**", parse_mode="Markdown")
@@ -93,6 +88,11 @@ async def handle_file(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
 
     if user_id not in active_users:
         await update.message.reply_text("⚠️ **Please use /host first!**", parse_mode="Markdown")
+        return
+
+    # ✅ अगर यूज़र 2 से अधिक फाइल भेज रहा है, तो रोके
+    if user_id in normal_user_data and normal_user_data[user_id]["count"] > 2:
+        await update.message.reply_text("⚠️ **आप 20 घंटे में केवल 2 स्क्रिप्ट होस्ट कर सकते हैं!**", parse_mode="Markdown")
         return
 
     file = update.message.document
