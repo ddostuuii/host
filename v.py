@@ -9,14 +9,7 @@ TOKEN = "8024990900:AAEVjj9q-b3SIEakZPfGOnq03rSNwQWniDU"
 CHANNEL_ID = -1002363906868
 
 # ✅ एडमिन्स लोड करने का फ़ंक्शन
-def load_admins():
-    try:
-        with open("admins.txt", "r") as f:
-            return {int(line.strip()) for line in f if line.strip().isdigit()}
-    except FileNotFoundError:
-        return {7017469802, 987654321}  
-
-admins = load_admins()
+admins = {7017469802, 987654321}  
 approved_users = set()  
 normal_user_data = {}  
 active_users = set()  
@@ -34,7 +27,7 @@ async def is_user_joined(user_id: int, context: ContextTypes.DEFAULT_TYPE) -> bo
 # ✅ स्क्रिप्ट होस्टिंग लिमिट चेक
 def can_host_script(user_id: int) -> bool:
     if user_id in admins or user_id in approved_users:
-        return True
+        return True  
 
     now = time.time()
 
@@ -148,32 +141,11 @@ async def run_python_script(update: Update, file_path: str, user_id: int):
     except Exception as e:
         await update.message.reply_text(f"❌ **Error:** `{str(e)}`", parse_mode="Markdown")
 
-# ✅ /add_admin Command
-async def add_admin(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    if update.message.from_user.id not in admins:
-        await update.message.reply_text("🚫 **आपको अनुमति नहीं है!**", parse_mode="Markdown")
-        return
-
-    if not context.args:
-        await update.message.reply_text("⚠️ **Usage:** `/add_admin <user_id>`", parse_mode="Markdown")
-        return
-
-    try:
-        user_id = int(context.args[0])
-        admins.add(user_id)
-        with open("admins.txt", "a") as f:
-            f.write(f"{user_id}\n")  
-
-        await update.message.reply_text(f"✅ **User {user_id} is now an admin!**", parse_mode="Markdown")
-    except ValueError:
-        await update.message.reply_text("⚠️ **Invalid user ID!**", parse_mode="Markdown")
-
 # ✅ बॉट स्टार्ट फंक्शन
 def main():
     app = Application.builder().token(TOKEN).build()
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("host", host))
-    app.add_handler(CommandHandler("add_admin", add_admin))
     app.add_handler(MessageHandler(filters.Document.ALL, handle_file))
     app.run_polling()
 
