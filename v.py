@@ -4,13 +4,15 @@ import time
 from telegram import Update
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
 
-# ✅ Bot Token & Channel Information
+# ✅ बॉट टोकन और चैनल डिटेल्स
 TOKEN = "8024990900:AAEVjj9q-b3SIEakZPfGOnq03rSNwQWniDU"
 CHANNEL_ID = -1002363906868
 
-# ✅ एडमिन्स लोड करने का फ़ंक्शन
+# ✅ एडमिन और अप्रूव्ड यूज़र्स
 admins = {7017469802, 987654321}  
 approved_users = set()  
+
+# ✅ नॉर्मल यूज़र डेटा (लिमिट ट्रैक करने के लिए)
 normal_user_data = {}  
 active_users = set()  
 user_files = {}  
@@ -66,8 +68,7 @@ async def host(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         return
 
     if user_id not in admins and user_id not in approved_users:
-        normal_user_data[user_id]["count"] += 1
-        normal_user_data[user_id]["start_time"] = time.time()
+        normal_user_data[user_id]["count"] = 0  # ✅ `/host` करने के बाद नई लिमिट स्टार्ट  
 
     active_users.add(user_id)
     await update.message.reply_text("📂 **अब आप `.py` फाइल भेज सकते हैं, बॉट उसे होस्ट करेगा।**", parse_mode="Markdown")
@@ -84,7 +85,7 @@ async def handle_file(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
         return
 
     # ✅ अगर यूज़र 2 से अधिक फाइल भेज रहा है, तो रोके
-    if user_id in normal_user_data and normal_user_data[user_id]["count"] > 2:
+    if user_id in normal_user_data and normal_user_data[user_id]["count"] >= 2:
         await update.message.reply_text("⚠️ **आप 20 घंटे में केवल 2 स्क्रिप्ट होस्ट कर सकते हैं!**", parse_mode="Markdown")
         return
 
@@ -99,6 +100,11 @@ async def handle_file(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
     await new_file.download_to_drive(file_path)
 
     user_files[user_id] = file_path  
+
+    # ✅ स्क्रिप्ट काउंट बढ़ाना
+    if user_id not in admins and user_id not in approved_users:
+        normal_user_data[user_id]["count"] += 1
+
     await update.message.reply_text(f"📂 **File '{file.file_name}' is being hosted...**", parse_mode="Markdown")
 
     asyncio.create_task(run_python_script(update, file_path, user_id))
